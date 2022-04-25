@@ -50,11 +50,30 @@ API_AVAILABLE(ios(13.0))
     NSString *userId = cred.user;
     NSData *token = cred.identityToken;
     NSString *tokenString = [[NSString alloc] initWithData:token encoding:NSUTF8StringEncoding];
+    NSString *email = cred.email;
+    NSPersonNameComponents *fullName = cred.fullName;
+    
+    NSMutableDictionary<NSString*, NSString*>* authData = [NSMutableDictionary dictionary];
+    [authData setValue:tokenString forKey:@"token"];
+    [authData setValue:userId forKey:@"id"];
+    if (email) {
+        [authData setValue:email forKey:@"email"];
+    }
+    if (fullName) {
+        NSString * givenName = fullName.givenName;
+        NSString * familyName = fullName.familyName;
+        if (givenName) {
+            [authData setValue:givenName forKey:@"givenName"];
+        }
+        if (familyName) {
+            [authData setValue:familyName forKey:@"familyName"];
+        }
+    }
     
     __weak typeof(self) wself = self;
     
     [[[PFUser logInWithAuthTypeInBackground:PFAppleUserAuthenticationType
-                                 authData:@{@"token" : tokenString, @"id" : userId}] continueWithSuccessBlock:^id _Nullable(BFTask<__kindof PFUser *> * _Nonnull t) {
+                                 authData:authData] continueWithSuccessBlock:^id _Nullable(BFTask<__kindof PFUser *> * _Nonnull t) {
         __strong typeof(wself) sself = wself;
         [sself.completionSource setResult:@{PFAppleAuthUserKey : t.result,
                                             PFAppleAuthCredentialKey : cred}];
@@ -113,8 +132,9 @@ static PFAppleAuthenticationProvider *_authenticationProvider;
     request.requestedScopes = @[ASAuthorizationScopeFullName, ASAuthorizationScopeEmail];
     
     ASAuthorizationController *controller = [[ASAuthorizationController alloc] initWithAuthorizationRequests:@[request]];
+    BFTask<NSDictionary *> * result = [manager loginTaskWithController:controller];
     [controller performRequests];
-    return [manager loginTaskWithController:controller];
+    return result;
 }
 @end
 
