@@ -44,6 +44,7 @@
 @property (nonatomic, strong) NSString *user;
 @property (nonatomic, strong) NSPersonNameComponents *fullName;
 @property (nonatomic, strong) NSData *identityToken;
+@property (nonatomic, strong) NSString *email;
 
 @end
 
@@ -68,10 +69,6 @@
     FakeCredential *cred = [FakeCredential new];
     NSString *aString = [NSUUID UUID].UUIDString;
     cred.user = aString;
-    NSPersonNameComponents *name = [[NSPersonNameComponents alloc] init];
-    name.givenName = @"Test";
-    name.familyName = @"User";
-    cred.fullName = name;
     NSData *token = [aString dataUsingEncoding:NSUTF8StringEncoding];
     cred.identityToken = token;
     fakeAuth.credential = cred;
@@ -91,9 +88,58 @@
     [logInTask continueWithSuccessBlock:^id _Nullable(BFTask<NSDictionary *> * _Nonnull t) {
         XCTAssert(t.result[@"user"] == loggedInUser);
         ASAuthorizationAppleIDCredential *credential = t.result[@"credential"];
+        XCTAssert([credential.identityToken isEqual:cred.identityToken]);
+        XCTAssert([credential.user isEqual:cred.user]);
+        [expectLoginSuccess fulfill];
+        return nil;
+    }];
+    
+    // Call the success callback as Apple would
+    [manager authorizationController:manager.controller didCompleteWithAuthorization:(ASAuthorization *)fakeAuth];
+    [self waitForExpectations:@[expectLoginSuccess] timeout:2];
+    
+    [mockUser stopMocking];
+    
+}
+
+- (void)testAppleUtilsFirstLoginSuccess {
+    
+    // Create test ASAuthorization and ASAuthorizationAppleIDCredential
+    FakeAuth *fakeAuth = [FakeAuth new];
+    FakeCredential *cred = [FakeCredential new];
+    NSString *aString = [NSUUID UUID].UUIDString;
+    cred.user = aString;
+    NSPersonNameComponents *name = [[NSPersonNameComponents alloc] init];
+    name.givenName = @"Test";
+    name.familyName = @"User";
+    cred.fullName = name;
+    NSData *token = [aString dataUsingEncoding:NSUTF8StringEncoding];
+    cred.identityToken = token;
+    cred.email = @"an email";
+    fakeAuth.credential = cred;
+    
+    // Create stub for PFUser logInWithAuthTypeInBackground
+    id mockUser = OCMClassMock([PFUser class]);
+    NSDictionary *authData = @{@"token" : aString,
+                               @"id" : aString,
+                               @"email" : @"an email",
+                               @"givenName" : @"Test",
+                               @"familyName" : @"User"};
+    PFUser *loggedInUser = [PFUser new];
+    OCMStub(ClassMethod([mockUser logInWithAuthTypeInBackground:@"apple" authData:authData])).andReturn([BFTask taskWithResult:loggedInUser]);
+    
+    // Create the login task
+    PFAppleLoginManager *manager = [PFAppleLoginManager new];
+    BFTask<NSDictionary *> *logInTask = [PFAppleUtils logInInBackgroundWithManager:manager];
+    
+    XCTestExpectation *expectLoginSuccess = [self expectationWithDescription:@"Login should complete."];
+    [logInTask continueWithSuccessBlock:^id _Nullable(BFTask<NSDictionary *> * _Nonnull t) {
+        XCTAssert(t.result[@"user"] == loggedInUser);
+        ASAuthorizationAppleIDCredential *credential = t.result[@"credential"];
         XCTAssert([credential.fullName isEqual:cred.fullName]);
         XCTAssert([credential.identityToken isEqual:cred.identityToken]);
         XCTAssert([credential.user isEqual:cred.user]);
+        XCTAssert([credential.email isEqualToString:cred.email]);
         [expectLoginSuccess fulfill];
         return nil;
     }];
